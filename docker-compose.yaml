@@ -1,0 +1,201 @@
+# Hermes reaches Ollama at http://ollama:11434 on hermes-net. That path does
+# not use a published host port. The dashboard is published on loopback only.
+# The Hermes API on 8642 and the broker on 8787 are reachable from hermes-net
+# and are not published on the host. OpenClaw's gateway binds loopback inside
+# its own container and is not published either.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-local
+    restart: unless-stopped
+    gpus: all
+    environment:
+      OLLAMA_HOST: 0.0.0.0
+      OLLAMA_KEEP_ALIVE: 24h
+      OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-65536}
+    volumes:
+      - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 15s
+    networks:
+      - hermes-net
+
+  hermes:
+    image: ${HERMES_IMAGE:-nousresearch/hermes-agent@sha256:adb7890916de63245523492be8f68f9d2095fecbec4e2a6dab7960381f0fc002}
+    container_name: hermes-agent
+    restart: unless-stopped
+    command: ["gateway", "run"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      HERMES_UID: ${HERMES_UID:-10000}
+      HERMES_GID: ${HERMES_GID:-10000}
+      HERMES_HOME: /opt/data
+      HERMES_DASHBOARD: ${HERMES_DASHBOARD:-1}
+      HERMES_DASHBOARD_HOST: 0.0.0.0
+      HERMES_DASHBOARD_PORT: "9119"
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_PORT: "8642"
+      HERMES_DASHBOARD_SESSION_TOKEN: file:/run/secrets/dashboard.token
+    volumes:
+      - /home/user/hermes/ollama-stack:/opt/data
+      - /home/user/hermes/keys/dashboard.token:/run/secrets/dashboard.token:ro
+      - /home/user/hermes/keys/bleep_ed25519:/run/secrets/bleep_ed25519:ro
+    ports:
+      - "127.0.0.1:9119:9119"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+    networks:
+      - hermes-net
+
+  protocol-broker:
+    image: ${HERMES_IMAGE:-nousresearch/hermes-agent@sha256:adb7890916de63245523492be8f68f9d2095fecbec4e2a6dab7960381f0fc002}
+    container_name: protocol-broker
+    restart: unless-stopped
+    user: "10000:10000"
+    entrypoint: ["/opt/hermes/.venv/bin/python3", "/opt/broker/server.py"]
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      HOME: /tmp
+      HERMES_URL: http://hermes-agent:8642
+      HERMES_KEY_FILE: /keys/hermes_api.key
+      BROKER_HOST: 0.0.0.0
+      BROKER_PORT: "8787"
+      BROKER_SESSION_KEY: broker-executor
+      HERMES_TIMEOUT_S: "180"
+    volumes:
+      - ./broker:/opt/broker:ro
+      - /home/user/hermes/keys/api_server.key:/keys/hermes_api.key:ro
+    tmpfs:
+      - /tmp
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      hermes:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/opt/hermes/.venv/bin/python3",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/health', timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    networks:
+      - hermes-net
+
+  openclaw-gateway:
+    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw@sha256:6cb72e1599b3b76e2ea3dcc2f4dd7f112247367fbecadfcdee8caa7423f4989b}
+    container_name: openclaw-gateway
+    restart: unless-stopped
+    command:
+      [
+        "node",
+        "dist/index.js",
+        "gateway",
+        "--bind",
+        "loopback",
+        "--port",
+        "18789",
+      ]
+    environment:
+      HOME: /home/node
+      OPENCLAW_HOME: /home/node
+      OPENCLAW_STATE_DIR: /home/node/.openclaw
+      OPENCLAW_CONFIG_PATH: /home/node/.openclaw/openclaw.json
+      OPENCLAW_CONFIG_DIR: /home/node/.openclaw
+      OPENCLAW_WORKSPACE_DIR: /home/node/.openclaw/workspace
+    volumes:
+      - /home/user/hermes/openclaw:/home/node/.openclaw
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:18789/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 25s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+    networks:
+      - hermes-net
+
+  bleep:
+    build:
+      context: ./bleep
+      args:
+        BLEEP_REVISION: ${BLEEP_REVISION}
+    image: bleep-local:${BLEEP_REVISION}
+    container_name: bleep
+    hostname: bleep
+    restart: unless-stopped
+    environment:
+      BLEEP_DB_PATH: /home/bleep/.bleep/observations.db
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - bleep-home:/home/bleep
+      - /home/user/hermes/keys/bleep_ed25519.pub:/run/secrets/bleep_ed25519.pub:ro
+      - /proc/1/ns/net:/hostns/net
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x sshd >/dev/null && pgrep -x bluetoothd >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+    networks:
+      - hermes-net
+
+networks:
+  hermes-net:
+    driver: bridge
+
+volumes:
+  ollama:
+    external: true
+    name: ollama
+  bleep-home:
+    name: bleep-home

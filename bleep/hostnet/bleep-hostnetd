@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Accept sdptool and l2ping from group bluetooth and run them in the host netns."""
+import grp
+import json
+import os
+import selectors
+import socket
+import struct
+import subprocess
+
+SOCK_PATH = "/run/bleep-hostnet.sock"
+TOOLS = {"sdptool": "/usr/bin/sdptool", "l2ping": "/usr/bin/l2ping"}
+MAX_ARGS = 32
+MAX_ARG = 256
+MAX_REQUEST = 8192
+
+
+def recvall(conn, size):
+    buf = b""
+    while len(buf) < size:
+        part = conn.recv(size - len(buf))
+        if not part:
+            return None
+        buf += part
+    return buf
+
+
+def send_frame(conn, kind, payload):
+    conn.sendall(struct.pack("!BI", kind, len(payload)) + payload)
+
+
+def reject(conn):
+    send_frame(conn, 3, bytes([2]))
+
+
+def handle(conn):
+    header = recvall(conn, 4)
+    if header is None:
+        return
+    length = struct.unpack("!I", header)[0]
+    if length <= 0 or length > MAX_REQUEST:
+        reject(conn)
+        return
+    raw = recvall(conn, length)
+    if raw is None:
+        return
+    try:
+        req = json.loads(raw.decode("utf-8"))
+        tool = req["tool"]
+        args = req["args"]
+    except (UnicodeError, json.JSONDecodeError, KeyError, TypeError):
+        reject(conn)
+        return
+    binary = TOOLS.get(tool)
+    if (
+        binary is None
+        or not isinstance(args, list)
+        or len(args) > MAX_ARGS
+        or not all(isinstance(arg, str) and len(arg) <= MAX_ARG and "\0" not in arg for arg in args)
+    ):
+        reject(conn)
+        return
+    proc = subprocess.Popen(
+        ["/usr/bin/nsenter", "--net=/hostns/net", "--", binary, *args],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    sel = selectors.DefaultSelector()
+    sel.register(proc.stdout, selectors.EVENT_READ, 1)
+    sel.register(proc.stderr, selectors.EVENT_READ, 2)
+    open_streams = 2
+    while open_streams:
+        for key, _ in sel.select():
+            chunk = os.read(key.fd, 65536)
+            if not chunk:
+                sel.unregister(key.fileobj)
+                open_streams -= 1
+                continue
+            send_frame(conn, key.data, chunk)
+    code = proc.wait()
+    send_frame(conn, 3, bytes([(code if code >= 0 else 1) & 0xFF]))
+
+
+def main():
+    if os.path.exists(SOCK_PATH):
+        os.unlink(SOCK_PATH)
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(SOCK_PATH)
+    os.chown(SOCK_PATH, 0, grp.getgrnam("bluetooth").gr_gid)
+    os.chmod(SOCK_PATH, 0o660)
+    server.listen(4)
+    while True:
+        conn, _ = server.accept()
+        try:
+            handle(conn)
+        finally:
+            conn.close()
+
+
+if __name__ == "__main__":
+    main()

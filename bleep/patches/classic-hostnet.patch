@@ -1,0 +1,75 @@
+--- a/bleep/modes/classic_enum.py
++++ b/bleep/modes/classic_enum.py
+@@ -109,7 +109,11 @@
+     sdp_source = getattr(args, "sdp_source", "auto")
+     try:
+         records = discover_services_sdp(
+-            args.address, connectionless=connectionless_mode, source=sdp_source
++            args.address,
++            connectionless=connectionless_mode,
++            source=sdp_source,
++            timeout=10 if connectionless_mode else 30,
++            l2ping_timeout=5 if connectionless_mode else 13,
+         )
+ 
+         if records:
+@@ -325,8 +329,15 @@
+                     traceback.print_exc()
+ 
+     except Exception as sdp_exc:
+-        if debug_mode:
+-            print_and_log(f"[classic-enum] SDP discovery failed: {sdp_exc}", LOG__GENERAL)
++        print_and_log(
++            f"[classic-enum] SDP discovery failed: {sdp_exc}",
++            LOG__GENERAL,
++        )
++        if connectionless_mode:
++            return 1
++
++    if connectionless_mode:
++        return 0
+ 
+     try:
+         _, svc_map = _c_enum(args.address)
+--- a/bleep/ble_ops/classic/sdp.py
++++ b/bleep/ble_ops/classic/sdp.py
+@@ -67,6 +67,7 @@
+ if SDP discovery yields no records / *sdptool* exits with an error.
+ """
+ 
++import os
+ import re
+ import shutil
+ import subprocess
+@@ -377,6 +378,9 @@
+ 
+ def _ensure_sdptool() -> str:
+     """Return path to *sdptool* or raise ``NotSupportedError`` if not found."""
++    wrapper = "/usr/local/bin/sdptool"
++    if os.path.isfile(wrapper) and os.access(wrapper, os.X_OK):
++        return wrapper
+     if _SDPTOOL_PATH is None:
+         raise NotSupportedError("SDP via sdptool ('sdptool' not in PATH – install bluez-utils)")
+     return _SDPTOOL_PATH
+--- a/bleep/ble_ops/classic/ping.py
++++ b/bleep/ble_ops/classic/ping.py
+@@ -6,12 +6,17 @@
+ from __future__ import annotations
+ 
+ # noqa: D400,D401  # simple docstring style
+-import subprocess, shutil, re
++import os, subprocess, shutil, re
+ from typing import Optional, List
+ 
+ from bleep.core.log import print_and_log, LOG__DEBUG
+ 
+-_L2PING = shutil.which("l2ping")
++_L2PING_WRAPPER = "/usr/local/bin/l2ping"
++_L2PING = (
++    _L2PING_WRAPPER
++    if os.path.isfile(_L2PING_WRAPPER) and os.access(_L2PING_WRAPPER, os.X_OK)
++    else shutil.which("l2ping")
++)
+ # Match both legacy "time 23.4ms" and parenthesised variants "(23.4 ms)"
+ _RTT_RE = re.compile(r"time\s*([0-9.]+)\s*ms|\(([0-9.]+)\s*ms\)", re.IGNORECASE)
+ 

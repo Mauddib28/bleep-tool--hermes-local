@@ -1,0 +1,49 @@
+{
+  "gateway": {
+    "mode": "local",
+    "bind": "loopback",
+    "port": 18789,
+    "auth": {
+      "mode": "token",
+      "token": "__GATEWAY_TOKEN__"
+    }
+  },
+  "models": {
+    "providers": {
+      "ollama": {
+        "baseUrl": "http://ollama:11434",
+        "apiKey": "ollama-local",
+        "api": "ollama",
+        "timeoutSeconds": 300,
+        "contextWindow": 65536,
+        "models": [
+          {
+            "id": "qwen3.5:latest",
+            "name": "qwen3.5:latest",
+            "reasoning": true,
+            "input": ["text"],
+            "params": {
+              "num_ctx": 65536
+            }
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "ollama/qwen3.5:latest"
+      },
+      "workspace": "/home/node/.openclaw/workspace"
+    }
+  },
+  "tools": {
+    "allow": ["exec"]
+  },
+  "skills": {
+    "load": {
+      "extraDirs": ["/home/node/.openclaw/workspace/skills"]
+    }
+  }
+}

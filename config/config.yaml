@@ -1,0 +1,17 @@
+# First-boot seed for /home/user/hermes/ollama-stack.
+# scripts/up.sh copies this only when that directory has no config.yaml.
+_config_version: 52
+
+database:
+  journal_mode: "wal"
+
+model:
+  default: "qwen3.5:latest"
+  provider: "custom"
+  base_url: "http://ollama:11434/v1"
+  api_key: "ollama"
+  # Hermes Agent refuses tool-using runs below 64,000 tokens. 65,536
+  # clears that floor. ollama_num_ctx is the value sent on each request;
+  # without it Hermes asks Ollama for the GGUF max (262,144).
+  context_length: 65536
+  ollama_num_ctx: 65536

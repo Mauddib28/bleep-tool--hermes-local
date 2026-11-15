@@ -1,0 +1,22 @@
+--- a/bleep/modes/db.py
++++ b/bleep/modes/db.py
+@@ -1324,14 +1324,14 @@
+             report = f"{report}\n\n{_render_recon_md(recon, as_table=not report_bullets)}\n"
+ 
+     out_path = getattr(args, "out", None)
+-    ext = "json" if report_format == "json" else ("md" if report_format == "markdown" else "txt")
+     if out_path:
+         report_path = analyzer.save_report(report, filename=str(out_path))
++        print_and_log(
++            f"[+] Report ({report_format}, {len(addrs)} device(s)) saved to {report_path}",
++            LOG__GENERAL,
++        )
+     else:
+-        import datetime as _dt
+-        fname = f"db_report_{_dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}"
+-        report_path = analyzer.save_report(report, filename=fname)
+-    print_and_log(f"[+] Report ({report_format}, {len(addrs)} device(s)) saved to {report_path}", LOG__GENERAL)
++        print(report)
+     return 0
+ 
+ 

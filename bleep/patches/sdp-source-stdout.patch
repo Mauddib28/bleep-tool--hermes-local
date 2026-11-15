@@ -1,0 +1,63 @@
+--- a/bleep/ble_ops/classic/sdp.py
++++ b/bleep/ble_ops/classic/sdp.py
+@@ -1021,18 +1021,22 @@
+             argv, capture_output=True, text=True, timeout=proc_timeout, check=False
+         )
+     except subprocess.TimeoutExpired:
++        print(f"[classic_sdp] {source} timed out")
+         print_and_log(f"[classic_sdp] sdptool {source} timed out", LOG__DEBUG)
+         return None
+     if proc.returncode != 0:
++        detail = (proc.stderr.strip() or proc.stdout.strip())[:200]
++        print(f"[classic_sdp] {source} failed: {detail}")
+         print_and_log(
+-            f"[classic_sdp] sdptool {source} failed: "
+-            f"{(proc.stderr.strip() or proc.stdout.strip())[:200]}",
++            f"[classic_sdp] sdptool {source} failed: {detail}",
+             LOG__DEBUG,
+         )
+         return None
+     parsed = _parse_browse_xml(proc.stdout) if source == "xml" else _parse_records(proc.stdout)
+     for rec in parsed:
+         rec["source"] = source
++    if not parsed:
++        print(f"[classic_sdp] {source}: no records")
+     return parsed
+ 
+ 
+@@ -1123,6 +1127,8 @@
+     dbus_res = _discover_services_dbus(mac_address)  # already tagged source="dbus"
+     if dbus_res:
+         source_lists.append(("dbus", dbus_res))
++    else:
++        print("[classic_sdp] dbus: GetServiceRecords returned no records")
+     try:
+         path = _ensure_sdptool()
+     except (RuntimeError, NotSupportedError):
+@@ -1310,6 +1316,7 @@
+         # Store SDP records in database if available
+         _store_sdp_records(mac_address, dbus_res)
+         return dbus_res
++    print("[classic_sdp] dbus: GetServiceRecords returned no records")
+     
+     # Track successful parsed records for storage
+     successful_records: Optional[List[Dict[str, Any]]] = None
+@@ -1353,6 +1360,7 @@
+ 
+         if proc.returncode != 0:
+             last_error = proc.stderr.strip() or proc.stdout.strip()
++            print(f"[classic_sdp] {tag} failed: {last_error}")
+             continue
+ 
+         if LOG__DEBUG:
+@@ -1388,8 +1396,10 @@
+             if idx == len(cmds_to_try):
+                 break
+             last_error = f"No RFCOMM channels in {tag} output"
++            print(f"[classic_sdp] {last_error}")
+             continue
+         last_error = f"No services found via {tag}"
++        print(f"[classic_sdp] {last_error}")
+ 
+     if successful_records:
+         _store_sdp_records(mac_address, successful_records)

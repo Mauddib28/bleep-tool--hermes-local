@@ -1,0 +1,86 @@
+--- a/bleep/ble_ops/classic/sdp.py
++++ b/bleep/ble_ops/classic/sdp.py
+@@ -1139,6 +1139,13 @@
+         path = None
+     if path is not None:
+         for src in _SDPTOOL_SOURCES:  # browse, xml, records (dict is ordered)
++            if src == "records" and {"browse", "xml"} <= {
++                label for label, _recs in source_lists
++            }:
++                print(
++                    "[classic_sdp] records skipped: browse and xml already returned records"
++                )
++                continue
+             recs = _run_sdptool_source(path, src, mac_address, timeout)
+             if recs:
+                 source_lists.append((src, recs))
+@@ -1166,9 +1173,8 @@
+ ) -> List[Dict[str, Any]]:
+     """Perform SDP discovery with l2ping reachability check first (connectionless).
+     
+-    This function verifies device reachability using l2ping before attempting
+-    SDP queries. This provides faster failure detection and better error messages
+-    when devices are unreachable.
++    This function checks reachability with l2ping, then runs the SDP query.
++    A failed l2ping is printed. The query still runs.
+     
+     Parameters
+     ----------
+@@ -1189,7 +1195,7 @@
+     Raises
+     ------
+     RuntimeError
+-        If device is unreachable (l2ping fails) or if *sdptool* is missing/exits with error.
++        If *sdptool* is missing or exits with an error.
+     """
+     mac_address = mac_address.strip().upper()
+     
+@@ -1207,20 +1213,17 @@
+         rtt, error = classic_l2ping(mac_address, count=l2ping_count, timeout=l2ping_timeout)
+         
+         if rtt is None:
+-            # Device is unreachable
+             error_msg = error or "Device unreachable"
+-            raise ConnectionError(
+-                mac_address,
+-                f"not reachable via L2CAP: {error_msg}. SDP query skipped. "
+-                "Ensure device is powered on and in range.",
++            print(
++                f"[classic_sdp] l2ping failed: {error_msg}; continuing with SDP"
+             )
+-        
+-        print_and_log(
+-            f"[classic_sdp] Device reachable (avg RTT: {rtt:.2f}ms), proceeding with SDP query",
+-            LOG__DEBUG
+-        )
++        else:
++            print_and_log(
++                f"[classic_sdp] Device reachable (avg RTT: {rtt:.2f}ms), proceeding with SDP query",
++                LOG__DEBUG
++            )
+     
+-    # Device is reachable, proceed with normal SDP discovery (without connectionless to avoid recursion)
++    # Proceed with SDP discovery. connectionless=False avoids recursion.
+     return discover_services_sdp(mac_address, timeout=timeout, connectionless=False, source=source)
+ 
+ 
+@@ -1245,8 +1248,8 @@
+     timeout : int, optional
+         Seconds to wait for the *sdptool* process, default 30.
+     connectionless : bool, optional
+-        If True, verify device reachability via l2ping before SDP query.
+-        Default False (backward compatible).
++        If True, check reachability via l2ping and print a failure.
++        The SDP query still runs. Default False.
+     l2ping_count : int, optional
+         Number of l2ping echo requests when connectionless=True, default 3.
+     l2ping_timeout : int, optional
+@@ -1264,8 +1267,6 @@
+ 
+     Raises
+     ------
+-    bleep.core.errors.ConnectionError
+-        If connectionless=True and the device is unreachable.
+     bleep.core.errors.NotSupportedError
+         If *sdptool* is missing from PATH.
+     bleep.core.errors.BLEEPError
