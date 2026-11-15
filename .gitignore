@@ -1,0 +1,99 @@
+# Live secrets are created under /home/user/hermes/keys and
+# /home/user/hermes/ollama-stack/.env. They are not seeds.
+# config/hermes.env, config/config.yaml, and .env.example stay tracked.
+# openclaw/openclaw.json.template stays tracked. A filled openclaw.json does not.
+
+# Credentials and key material
+.env
+.env.*
+!.env.example
+keys/
+secrets/
+*.key
+*.pem
+*.p12
+*.pfx
+*.ppk
+*.password
+*.passwd
+*.token
+*.secret
+*.age
+*.kdbx
+id_*
+*_ed25519
+*_ed25519.pub
+*.pub
+authorized_keys
+known_hosts
+known_hosts.old
+.netrc
+credentials.json
+auth.json
+service-account*.json
+openclaw.json
+**/cron/jobs.json
+
+# Runtime data. Snapshots are observations.db.<utc>.schemaN, not *.db.
+*.tgz
+*.tar
+*.tar.gz
+*.zip
+*.bck
+*.bak
+*.orig
+*.rej
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+observations.db*
+*-wal
+*-shm
+*.log
+db_report_*
+aoi/
+**/cron/output/
+spillover/
+terminal-output/
+[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_*.md
+[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_*.txt
+
+# Local compose overrides. docker-compose.yaml stays tracked.
+docker-compose.override.yml
+docker-compose.override.yaml
+compose.override.yml
+compose.override.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# One-off scratch scripts
+scripts/_*.py
+scripts/_*.sh
+
+# Editor and OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+.cursor/mcp.json
